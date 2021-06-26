@@ -1,1 +1,3 @@
 # soml
+
+#SET MANUAL SEED
