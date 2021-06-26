@@ -18,6 +18,7 @@ batch_size = 96
 test_size = 1200
 learning_rate = 1.0
 gamma = 0.7
+seed = 1
 iterations = 100
 
 drive.mount('/content/gdrive')
@@ -125,5 +126,10 @@ def getTrainBatch():
     shuffle(training_order)
   for i in range(int(batch_size/3)):
     image_num = training_order(pos1 + i)
+    
+def main():
+  torch.manual_seed(args.seed)
 
+
+main()
   
