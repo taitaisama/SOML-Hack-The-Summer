@@ -14,17 +14,23 @@ from PIL import Image
 from torchvision.transforms import ToTensor
 import cv2
 import math
-from PIL import Image
+from PIL import Image, ImageOps
 import numpy as np
+import sys
+from torch.utils.data import Dataset, DataLoader
+from skimage import io, transform
+from torchvision import transforms, utils
+from torchvision.io import read_image
 
 
 # basic parameters
-batch_size = 32 * 3 # make sure to keep batch and test size multiple of 3
-test_size = 400 * 3 
+batch_size = 20
+test_size = 300 
 learning_rate = 1.0
 gamma = 0.7
 seed = 2
 iterations = 15
+print_interval = 10
 
 # neural network paramaters
 hidden_layers = [196]
@@ -38,7 +44,7 @@ max_pools = [2]
 
 drive.mount('/content/gdrive')
 
-zip_path = '/content/gdrive/MyDrive/soml/SoML-50.zip'
+zip_path = '/content/gdrive/MyDrive/soml/SoML_new.zip'
 annotations_path = '/content/SoML-50/annotations.csv'
 data_path = '/content/SoML-50/data/'
 
@@ -60,6 +66,72 @@ pos2 = 0
 # label_map[0] is first num, [1] is second, [2] is operator
 # info about fix can just be found by image_num % 3
 label_map = [[0]*996, [0]*996, [0]*996] 
+
+class DataSet(Dataset):
+
+  def __init__(self, img_dir, transform=None):
+    self.img_dir = img_dir
+    self.transform = transform
+
+  def __len__(self):
+    return 50000
+
+  def __getitem__(self, idx):
+    # img_path = self.img_dir + str(idx) + ".jpg"
+    image = getImage(idx)
+    label = idx
+    image = cropAndProcessImage(image)
+    label = translateLables(label)
+    if self.transform:
+        image = self.transform(image)
+    return image, label
+
+
+class NeuralNetwork(nn.Module):
+
+  def __init__(self):
+    super(NeuralNetwork, self).__init__()
+    self.convolution1 = nn.Conv2d(1, 32, 3, 1)
+    self.convolution2 = nn.Conv2d(32, 64, 3, 1)
+    self.removeRandom1 = nn.Dropout(0.25)
+    self.removeRandom2 = nn.Dropout(0.5)
+    self.linear1 = nn.Linear(9216, 128)
+    self.linear2 = nn.Linear(128, 14)
+  
+  def forward(self, x):
+    x = self.convolution1(x)
+    x = F.relu(x)
+    x = self.convolution2(x)
+    x = F.relu(x)
+    x = F.max_pool2d(x, 2)
+    x = self.removeRandom1(x)
+    x = torch.flatten(x, 1)
+    x = self.linear1(x)
+    x = F.relu(x)
+    x = self.removeRandom2(x)
+    x = self.linear2(x)
+    output = F.log_softmax(x, dim=1)
+    return output
+
+def train(optimizer, model, loader, device):
+  model.train()
+  for batch_idx, (data, label) in enumerate(loader):
+    optimizer.zero_grad()
+    list = []
+    for i in range(batch_size):
+      list.append(data[i])
+    concated_data = torch.cat(list, dim=0)
+    concat_labels = torch.cat(label, dim=0)
+    concated_data, concated_data = concated_data.to(device), concated_data.to(device)
+    output = model(concated_data)
+    loss = F.nll_loss(output, concat_labels)
+    loss.backward()
+    optimizer.step()
+    if batch_idx % print_interval == 0:
+            print('LOGS [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
+                 batch_idx * len(data), len(loader.dataset),
+                100. * batch_idx / len(loader), loss.item()))
+
 
 # fills the lable map array
 def makeLabels():
@@ -120,11 +192,13 @@ def getBounds(img):
 # takes an image of size x*y and makes it a square of size x*x if x > y
 def makeSquare (image, x, y):
   sqsize = max(x, y)
+
   img = Image.fromarray(image)
   new_image = Image.new('L', (sqsize, sqsize), (255))
   box = (int((sqsize - x) / 2), int((sqsize - y) / 2))
   new_image.paste(img, box)
-  return asarray(new_image)
+  im_invert = ImageOps.invert(new_image)
+  return asarray(im_invert)
 
 # takes an image and makes it into a tensor of (3, 1, 32, 32)
 def cropAndProcessImage(img):
@@ -139,7 +213,7 @@ def cropAndProcessImage(img):
     d = (b[3] * 8) + 7
     cropped = img[u : d, xs + l: xs + r]
     squared = makeSquare(cropped, r - l + 1, d - u + 1)
-    final = cv2.resize(squared, (32, 32))
+    final = cv2.resize(squared, (28, 28))
     tensor = torch.unsqueeze(ToTensor()(final), 0)
     if i == 0:
       tensors = tensor
@@ -156,30 +230,6 @@ def getImage(num):
 
 # gets the images and lables for training
 # returns a batch_size x 1 x 32 x 32 tensor and an array of size batch_size
-def getTrainBatch():
-
-  global pos1
-  global batch_size
-  global training_order
-
-  if pos1 > 40000 - int(batch_size/3):
-    pos1 = 0
-    shuffle(training_order)
-
-  image_num = training_order[pos1]
-  img = getImage(image_num)
-  img_data = cropAndProcessImage(img)
-  lable_data = translateLables(image_num)
-  for i in range(1, int(batch_size/3)):
-    image_num = training_order[pos1 + i]
-    img = getImage(image_num)
-    temptuple = (img_data, cropAndProcessImage(img))
-    img_data = torch.cat(temptuple, 0)
-    lable_data = lable_data + translateLables(image_num)
-
-  # dimensions of data are now (batch_size, 1, 32, 32)
-  pos1 += int(batch_size/3)
-  return (img_data, lable_data)
 
 def translateLables(num):
   num = num - 1
@@ -202,9 +252,17 @@ def translateLables(num):
     
 
 def main():
+  device = torch.device("cuda")
   torch.manual_seed(seed)
   np.random.seed(seed)
   makeLabels()
-  data = getTrainBatch()
-  
+  dataset = DataSet(data_path)
+  transform=transforms.Compose([
+        transforms.Normalize((0.1307,), (0.3081,))
+        ])
+  trainLoader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=1, pin_memory=True)
+  model = NeuralNetwork().to(device)
+  optimizer = optim.Adadelta(model.parameters(), lr=learning_rate)
+  train(optimizer, model, trainLoader, device)
+
 main()
