@@ -12,18 +12,29 @@ import matplotlib.pyplot as plt
 from PIL import Image
 from torchvision.transforms import ToTensor
 import cv2
+import math
 
-# parameters
-batch_size = 96
-test_size = 1200
+# basic parameters
+batch_size = 32 * 3 # make sure to keep batch and test size multiple of 3
+test_size = 400 * 3 
 learning_rate = 1.0
 gamma = 0.7
 seed = 1
-iterations = 100
+iterations = 15
+
+# neural network paramaters
+hidden_layers = [196]
+# format is out-channels, kernel size and stride
+convolution_params = [[32, 3, 1], [64, 3, 1]]
+# randomly turns numbers to 0, to reduce overfitting 
+dropouts = [0.25, 0.5]
+# does a maxpool of size n*n on the tensor 
+max_pools = [2]
+
 
 drive.mount('/content/gdrive')
 
-zip_path = '/content/drive/MyDrive/soml/SoML-50.zip'
+zip_path = '/content/gdrive/MyDrive/soml/SoML-50.zip'
 annotations_path = '/content/SoML-50/annotations.csv'
 data_path = '/content/SoML-50/data/'
 
@@ -48,6 +59,7 @@ label_map = [[0]*996, [0]*996, [0]*996]
 
 # fills the lable map array
 def makeLabels():
+  p = 0
   for i in range(10):
     for j in range(10):
       flag = 0
@@ -72,8 +84,11 @@ def makeLabels():
           label_map[0][p+k] = i
           label_map[1][p+k] = j
           label_map[2][p+k] = math.floor(k/3)
-         p += 12
+        p += 12
 
+# takes an image and tells us the right, left, upper and lower boundries
+# def getBounds(img):
+  
 # method takes a 32*32 image and centres the number/element
 # this is done by finding the bounds where the image starts and ends
 # ie: where the first non-white pixel is from each side
@@ -104,32 +119,63 @@ def centre(image):
 # gets the image of the name num.jpg
 def getImage(num):
   image_path = data_path + str(num) + ".jpg"
-  img = cv2.imread(img_path, 0) # takes input in grayscale
+  img = cv2.imread(image_path, 0) # takes input in grayscale
   return img
 
 # converts image to tensor along with other operations 
 # returns a 3 x 1 x 32 x 32 tensor
 def processImage(img):
-  reduced = cv2.resize(img, (96, 32))
+  # first we reduce the quality 16 times
+  reduced = cv2.resize(img, (96, 32)) 
+  # creates a tensor from reduced image
   tensor = ToTensor()(reduced)
+  # tensor gets split into 3 parts, now images is of form [3, 1, 32, 32]
   imgs = torch.split(tensor, 32, 2)
+  # image_aray is now [1, 1, 32, 32]
+  # all three images get concatinated and we get [3, 1, 32, 32]
+  # the one in the second dimension is used for convolutions
   image_array = torch.unsqueeze(torch.unsqueeze(centre(imgs[0][0]), 0), 0)
-  image_array = concat(image_array, torch.unsqueeze(torch.unsqueeze(centre(imgs[1][0]), 0), 0), 0)
-  image_array = concat(image_array, torch.unsqueeze(torch.unsqueeze(centre(imgs[2][0]), 0), 0), 0)
+  temptuple = (image_array, torch.unsqueeze(torch.unsqueeze(centre(imgs[1][0]), 0), 0))
+  image_array = torch.cat(temptuple, 0)
+  temptuple = (image_array, torch.unsqueeze(torch.unsqueeze(centre(imgs[2][0]), 0), 0))
+  image_array = torch.cat(temptuple, 0)
   return image_array
 
 # gets the images for training
 # returns a batch_size x 1 x 32 x 32 tensor
 def getTrainBatch():
-  if pos1 > 40000 - (batch_size/3):
+
+  global pos1
+  global batch_size
+  global training_order
+
+  if pos1 > 40000 - int(batch_size/3):
     pos1 = 0
     shuffle(training_order)
-  for i in range(int(batch_size/3)):
-    image_num = training_order(pos1 + i)
-    
-def main():
-  torch.manual_seed(args.seed)
 
+  image_num = training_order[pos1]
+  img = getImage(image_num)
+  data = processImage(img)
+  for i in range(1, int(batch_size/3)):
+    image_num = training_order[pos1 + i]
+    img = getImage(image_num)
+    temptuple = (data, processImage(img))
+    data = torch.cat(temptuple, 0)
+
+  # dimensions of data are now (batch_size, 1, 32, 32)
+  pos1 += int(batch_size/3)
+  return data
+
+def main():
+  torch.manual_seed(seed)
+  makeLabels()
+  data = getTrainBatch()
+  print(type(data), data.size())
+  for i in range(10):
+    img = data[i][0]
+    img = img.detach()
+    plt.imshow(img, cmap="gray")
+    plt.show()
 
 main()
-  
+
