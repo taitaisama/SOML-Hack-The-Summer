@@ -154,8 +154,8 @@ def getImage(num):
   img = cv2.imread(image_path, 0) # takes input in grayscale
   return img
 
-# gets the images for training
-# returns a batch_size x 1 x 32 x 32 tensor
+# gets the images and lables for training
+# returns a batch_size x 1 x 32 x 32 tensor and an array of size batch_size
 def getTrainBatch():
 
   global pos1
@@ -168,21 +168,43 @@ def getTrainBatch():
 
   image_num = training_order[pos1]
   img = getImage(image_num)
-  data = cropAndProcessImage(img)
+  img_data = cropAndProcessImage(img)
+  lable_data = translateLables(image_num)
   for i in range(1, int(batch_size/3)):
     image_num = training_order[pos1 + i]
     img = getImage(image_num)
-    temptuple = (data, cropAndProcessImage(img))
-    data = torch.cat(temptuple, 0)
+    temptuple = (img_data, cropAndProcessImage(img))
+    img_data = torch.cat(temptuple, 0)
+    lable_data = lable_data + translateLables(image_num)
 
   # dimensions of data are now (batch_size, 1, 32, 32)
   pos1 += int(batch_size/3)
+  return (img_data, lable_data)
+
+def translateLables(num):
+  num = num - 1
+  num = num % 996
+  data = []
+  if num % 3 == 0: # prefix
+    data.append(label_map[2][num] + 10)
+    data.append(label_map[0][num])
+    data.append(label_map[1][num])
+  elif num % 3 == 1: # postfix
+    data.append(label_map[0][num])
+    data.append(label_map[1][num])
+    data.append(label_map[2][num] + 10)
+  else : # infix
+    data.append(label_map[0][num])
+    data.append(label_map[2][num] + 10)
+    data.append(label_map[1][num])
+
   return data
+    
 
 def main():
   torch.manual_seed(seed)
   np.random.seed(seed)
   makeLabels()
   data = getTrainBatch()
-
+  
 main()
