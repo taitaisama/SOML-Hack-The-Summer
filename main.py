@@ -2,6 +2,7 @@ from google.colab import drive
 from __future__ import print_function
 from zipfile import ZipFile
 from numpy.random import shuffle
+from numpy import asarray
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -13,13 +14,16 @@ from PIL import Image
 from torchvision.transforms import ToTensor
 import cv2
 import math
+from PIL import Image
+import numpy as np
+
 
 # basic parameters
 batch_size = 32 * 3 # make sure to keep batch and test size multiple of 3
 test_size = 400 * 3 
 learning_rate = 1.0
 gamma = 0.7
-seed = 1
+seed = 2
 iterations = 15
 
 # neural network paramaters
@@ -87,59 +91,68 @@ def makeLabels():
         p += 12
 
 # takes an image and tells us the right, left, upper and lower boundries
-# def getBounds(img):
-  
-# method takes a 32*32 image and centres the number/element
-# this is done by finding the bounds where the image starts and ends
-# ie: where the first non-white pixel is from each side
-def centre(image):
-  r = 0
-  l = 31
-  u = 31
-  d = 0
-  for i in range(32):
-    for j in range(32):
-      if image[i][j] != 1:
-        if i < u:
-          u = i
-        if i > d:
-          d = i
-        if j < l:
-          l = j
-        if j > r:
-          r = j
-  hor = 32 - (r - l + 1)
-  ver = 32 - (d - u + 1)
-  ld = int(hor/2)
-  ud = int(ver/2)
-  image = torch.roll(image, ld - l, 1)
-  image = torch.roll(image, ud - u, 0)
-  return image
+def getBounds(img):
+  # reduce in size for easier searching
+  reduce = cv2.resize(img, (48, 16))
+  imgarr = [reduce[0:16, 0:16], reduce[0:16, 16:32], reduce[0:16, 32:48]]
+  # format of bounds is r l u d
+  bounds = [[0, 15, 15, 0], [0, 15, 15, 0], [0, 15, 15, 0]]
+  for k in range(3):
+    for i in range(16):
+      for j in range(16):
+        if imgarr[k][i][j] != 255:
+          if i < bounds[k][2]:
+            bounds[k][2] = i
+          if i > bounds[k][3]:
+            bounds[k][3] = i
+          if j < bounds[k][1]:
+            bounds[k][1] = j
+          if j > bounds[k][0]:
+            bounds[k][0] = j
+
+  for k in range(3):
+    bounds[k][0] = min(15, bounds[k][0] + 1)
+    bounds[k][3] = min(15, bounds[k][3] + 1)
+    bounds[k][1] = max(0, bounds[k][1] - 1)
+    bounds[k][2] = max(0, bounds[k][2] - 1)
+  return bounds
+
+# takes an image of size x*y and makes it a square of size x*x if x > y
+def makeSquare (image, x, y):
+  sqsize = max(x, y)
+  img = Image.fromarray(image)
+  new_image = Image.new('L', (sqsize, sqsize), (255))
+  box = (int((sqsize - x) / 2), int((sqsize - y) / 2))
+  new_image.paste(img, box)
+  return asarray(new_image)
+
+# takes an image and makes it into a tensor of (3, 1, 32, 32)
+def cropAndProcessImage(img):
+  bounds = getBounds(img)
+  tensors = []
+  for i in range(3):
+    xs = i * 128
+    b = bounds[i]
+    l = (b[1] * 8)
+    r = (b[0] * 8) + 7
+    u = (b[2] * 8)
+    d = (b[3] * 8) + 7
+    cropped = img[u : d, xs + l: xs + r]
+    squared = makeSquare(cropped, r - l + 1, d - u + 1)
+    final = cv2.resize(squared, (32, 32))
+    tensor = torch.unsqueeze(ToTensor()(final), 0)
+    if i == 0:
+      tensors = tensor
+    else:
+      tensors = torch.cat((tensors, tensor),0)
+
+  return tensors
 
 # gets the image of the name num.jpg
 def getImage(num):
   image_path = data_path + str(num) + ".jpg"
   img = cv2.imread(image_path, 0) # takes input in grayscale
   return img
-
-# converts image to tensor along with other operations 
-# returns a 3 x 1 x 32 x 32 tensor
-def processImage(img):
-  # first we reduce the quality 16 times
-  reduced = cv2.resize(img, (96, 32)) 
-  # creates a tensor from reduced image
-  tensor = ToTensor()(reduced)
-  # tensor gets split into 3 parts, now images is of form [3, 1, 32, 32]
-  imgs = torch.split(tensor, 32, 2)
-  # image_aray is now [1, 1, 32, 32]
-  # all three images get concatinated and we get [3, 1, 32, 32]
-  # the one in the second dimension is used for convolutions
-  image_array = torch.unsqueeze(torch.unsqueeze(centre(imgs[0][0]), 0), 0)
-  temptuple = (image_array, torch.unsqueeze(torch.unsqueeze(centre(imgs[1][0]), 0), 0))
-  image_array = torch.cat(temptuple, 0)
-  temptuple = (image_array, torch.unsqueeze(torch.unsqueeze(centre(imgs[2][0]), 0), 0))
-  image_array = torch.cat(temptuple, 0)
-  return image_array
 
 # gets the images for training
 # returns a batch_size x 1 x 32 x 32 tensor
@@ -155,11 +168,11 @@ def getTrainBatch():
 
   image_num = training_order[pos1]
   img = getImage(image_num)
-  data = processImage(img)
+  data = cropAndProcessImage(img)
   for i in range(1, int(batch_size/3)):
     image_num = training_order[pos1 + i]
     img = getImage(image_num)
-    temptuple = (data, processImage(img))
+    temptuple = (data, cropAndProcessImage(img))
     data = torch.cat(temptuple, 0)
 
   # dimensions of data are now (batch_size, 1, 32, 32)
@@ -168,14 +181,8 @@ def getTrainBatch():
 
 def main():
   torch.manual_seed(seed)
+  np.random.seed(seed)
   makeLabels()
   data = getTrainBatch()
-  print(type(data), data.size())
-  for i in range(10):
-    img = data[i][0]
-    img = img.detach()
-    plt.imshow(img, cmap="gray")
-    plt.show()
 
 main()
-
