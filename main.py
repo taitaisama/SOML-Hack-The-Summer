@@ -21,6 +21,7 @@ from torch.utils.data import Dataset, DataLoader
 from skimage import io, transform
 from torchvision import transforms, utils
 from torchvision.io import read_image
+import csv 
 
 
 # basic parameters
@@ -28,9 +29,10 @@ batch_size = 20
 test_size = 300 
 learning_rate = 1.0
 gamma = 0.7
-seed = 2
+seed = 1
 iterations = 15
 print_interval = 10
+image_number = 1
 
 # neural network paramaters
 hidden_layers = [196]
@@ -41,12 +43,13 @@ dropouts = [0.25, 0.5]
 # does a maxpool of size n*n on the tensor 
 max_pools = [2]
 
-
-drive.mount('/content/gdrive')
+drive.mount("/content/gdrive")
 
 zip_path = '/content/gdrive/MyDrive/soml/SoML_new.zip'
 annotations_path = '/content/SoML-50/annotations.csv'
 data_path = '/content/SoML-50/data/'
+copy_path = '/content/gdrive/MyDrive/soml/created_dataset/batch1data/'
+csvfile_path = 'temporary.csv'
 
 with ZipFile(zip_path, 'r') as zip:
   zip.extractall()
@@ -78,6 +81,7 @@ class DataSet(Dataset):
 
   def __getitem__(self, idx):
     # img_path = self.img_dir + str(idx) + ".jpg"
+    idx = idx + 1
     image = getImage(idx)
     label = idx
     image = cropAndProcessImage(image)
@@ -91,19 +95,53 @@ class NeuralNetwork(nn.Module):
 
   def __init__(self):
     super(NeuralNetwork, self).__init__()
+  #   self.conv1 = nn.Conv2d(1, 32, 3, 1)
+  #   self.conv2 = nn.Conv2d(32, 64, 3, 1)
+  #   self.dropout1 = nn.Dropout(0.25)
+  #   self.dropout2 = nn.Dropout(0.5)
+  #   self.fc1 = nn.Linear(9216, 128)
+  #   self.fc2 = nn.Linear(128, 14)
+
+  # def forward(self, x):
+  #   x = F.max_pool2d(x, 3)
+  #   # plt.show()
+  #   # x = self.conv1(x)
+  #   # x = F.relu(x)
+  #   # x = self.conv2(x)
+  #   # x = F.relu(x)
+  #   # x = F.max_pool2d(x, 2)
+  #   # # plt.imshow(x[0][0].cpu().detach(), cmap="gray")
+  #   # # plt.show()
+  #   # x = self.dropout1(x)
+  #   # x = torch.flatten(x, 1)
+  #   # x = self.fc1(x)
+  #   # x = F.relu(x)
+  #   # x = self.dropout2(x)
+  #   # x = self.fc2(x)
+  #   # output = F.log_softmax(x, dim=1)
+  #   # return output
     self.convolution1 = nn.Conv2d(1, 32, 3, 1)
     self.convolution2 = nn.Conv2d(32, 64, 3, 1)
     self.removeRandom1 = nn.Dropout(0.25)
     self.removeRandom2 = nn.Dropout(0.5)
     self.linear1 = nn.Linear(9216, 128)
     self.linear2 = nn.Linear(128, 14)
+    self.test2 = nn.Linear(384, 128)
+    self.test3 = nn.Linear(128, 14)
+    self.test1 = nn.Linear(784, 384)
   
   def forward(self, x):
+    x = F.max_pool2d(x, 3)
+    # print(x[0][0])
+    # plt.imshow(x[0][0].cpu().detach(), cmap="gray")
+    # plt.show()
     x = self.convolution1(x)
     x = F.relu(x)
     x = self.convolution2(x)
     x = F.relu(x)
     x = F.max_pool2d(x, 2)
+    # plt.imshow(x[0][0].cpu().detach(), cmap="gray")
+    # plt.show()
     x = self.removeRandom1(x)
     x = torch.flatten(x, 1)
     x = self.linear1(x)
@@ -111,19 +149,49 @@ class NeuralNetwork(nn.Module):
     x = self.removeRandom2(x)
     x = self.linear2(x)
     output = F.log_softmax(x, dim=1)
+    # x = torch.flatten(x, 1)
+    # x = self.test1(x)
+    # x = F.relu(x)
+    # x = self.test2(x)
+    # x = F.relu(x)
+    # x = self.test3(x)
+    # x = F.relu(x)
+    # output = F.log_softmax(x, dim=1)
     return output
 
 def train(optimizer, model, loader, device):
-  model.train()
+  #model.train()
   for batch_idx, (data, label) in enumerate(loader):
     optimizer.zero_grad()
-    list = []
-    for i in range(batch_size):
-      list.append(data[i])
-    concated_data = torch.cat(list, dim=0)
+    # list = []
+    # for i in range(batch_size):
+    #   list.append(data[i])
+    concated_data = torch.cat(data, dim=0)
+    # label_tensor = torch.zeros((batch_size*3))
+    # for i in range(batch_size):
+    #   for j in range(3):
+    #     label_tensor[j + i*3] = label[j][i]
     concat_labels = torch.cat(label, dim=0)
-    concated_data, concated_data = concated_data.to(device), concated_data.to(device)
+    # label_tensor = label_tensor.to(device)
+    concat_labels = concat_labels.to(device)
+    concated_data = concated_data.to(device)
+    # concated_data, concated_data = concated_data.to(device), concated_data.to(device)
     output = model(concated_data)
+    # global image_number
+    # fields = []
+    # for i in range(batch_size * 3):
+    #   string = str(image_number + i) + '.jpg'
+    #   temp = [string, str(concat_labels[i].item())]
+    #   fields.append(temp)
+    # image_number += batch_size*3
+    # if batch_idx * len(data) >= 10000:
+    #   global csvfile_path
+    #   with open(csvfile_path, 'w') as csvfile: 
+    #     csvwriter = csv.writer(csvfile) 
+    #     print(len(fields))
+    #     csvwriter.writerows(fields)
+    #   !cp -r temporary.csv /content/gdrive/MyDrive/soml/created_dataset/temporary.csv
+    #   return
     loss = F.nll_loss(output, concat_labels)
     loss.backward()
     optimizer.step()
@@ -131,6 +199,31 @@ def train(optimizer, model, loader, device):
             print('LOGS [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                  batch_idx * len(data), len(loader.dataset),
                 100. * batch_idx / len(loader), loss.item()))
+
+
+def test(model, device, test_loader):
+  model.eval()
+  test_loss = 0
+  correct = 0
+  with torch.no_grad():
+    for data, target in test_loader:
+      data = data.to(device)
+      list = []
+      for i in range(test_size/3):
+        list.append(data[i])
+      concated_data = torch.cat(list, dim=0)
+      output = model(concated_data)
+      tar = torch.cat(target, dim=0) 
+      tar = tar.to(device)
+      test_loss += F.nll_loss(output, tar, reduction='sum').item()  # sum up batch loss
+      pred = output.argmax(dim=1, keepdim=True)  # get the index of the max log-probability
+      correct += pred.eq(tar.view_as(pred)).sum().item()
+
+  test_loss /= len(test_loader.dataset)
+
+  print('\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n'.format(
+      test_loss, correct, len(test_loader.dataset),
+      100. * correct / len(test_loader.dataset)))
 
 
 # fills the lable map array
@@ -213,12 +306,8 @@ def cropAndProcessImage(img):
     d = (b[3] * 8) + 7
     cropped = img[u : d, xs + l: xs + r]
     squared = makeSquare(cropped, r - l + 1, d - u + 1)
-    final = cv2.resize(squared, (28, 28))
-    tensor = torch.unsqueeze(ToTensor()(final), 0)
-    if i == 0:
-      tensors = tensor
-    else:
-      tensors = torch.cat((tensors, tensor),0)
+    final = cv2.resize(squared, (84, 84))
+    tensors.append(ToTensor()(final))
 
   return tensors
 
@@ -227,9 +316,6 @@ def getImage(num):
   image_path = data_path + str(num) + ".jpg"
   img = cv2.imread(image_path, 0) # takes input in grayscale
   return img
-
-# gets the images and lables for training
-# returns a batch_size x 1 x 32 x 32 tensor and an array of size batch_size
 
 def translateLables(num):
   num = num - 1
@@ -247,12 +333,11 @@ def translateLables(num):
     data.append(label_map[0][num])
     data.append(label_map[2][num] + 10)
     data.append(label_map[1][num])
-
   return data
     
 
 def main():
-  device = torch.device("cuda")
+  device = torch.device("cpu")
   torch.manual_seed(seed)
   np.random.seed(seed)
   makeLabels()
@@ -261,8 +346,13 @@ def main():
         transforms.Normalize((0.1307,), (0.3081,))
         ])
   trainLoader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=1, pin_memory=True)
+  testLoader = DataLoader(dataset, batch_size=test_size, shuffle=True, num_workers=1, pin_memory=True)
   model = NeuralNetwork().to(device)
   optimizer = optim.Adadelta(model.parameters(), lr=learning_rate)
   train(optimizer, model, trainLoader, device)
+  
+  # test(model, device, testLoader)
+  
 
 main()
+
