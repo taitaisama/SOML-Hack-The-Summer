@@ -35,7 +35,7 @@ _gamma = 0.7
 _seed = 1
 _epochs = 15
 _print_interval = 10
-_first_iters =  5000
+_first_iters = 500
 
 with ZipFile(_zip_path, 'r') as zip:
   zip.extractall()
@@ -207,7 +207,7 @@ def initialProcessing():
 
   global _value_name_map, _indi_dir, _proc_img_dir, _annotate_df
 
-  # first make all the directories
+  # # first make all the directories
   os.system("mkdir " + _indi_dir)
   os.system("mkdir " + _proc_img_dir)
   for i in range(14):
@@ -215,8 +215,75 @@ def initialProcessing():
 
   _annotate_df = pd.read_csv(_annotation_path)
   
-  processAllImgs()
+  # processAllImgs()
   
+def processAnnotations2(model, device):
+
+  global _value_name_map, _annotate_df, _value_nums, _indi_dir, _annotation_path, _annotate_dict
+  
+  print("start|   making second batch   |end")
+  print("      ", end="")
+  for idx in _annotate_df.index:
+    first, oper, second = None, None, None
+    result = _annotate_df['Value'][idx]
+    fix = _annotate_df['Label'][idx]
+    name = _annotate_df['Image'][idx]
+    do_proc = True
+    n1, n2, o = -1, -1, -1 # n1 is known number, n2 is other
+    if result == 27: # 3 x 9 case
+      n1, n2, o = 9, 3, 12
+    elif result == 28: # 4 x 7 case
+      n1, n2, o = 7, 4, 12
+    elif result == 42: # 6 x 7 case
+      n1, n2, o = 7, 6, 12
+    elif result == 20: # 4 x 5 case
+      n1, n2, o = 5, 4, 12
+    elif result == 32: # 4 x 8 case
+      n1, n2, o = 8, 4, 12
+    elif result == 21: # 3 x 7 case
+      n1, n2, o = 7, 3, 12
+    else: 
+      do_proc = False
+    if do_proc:
+      images = getProcessedImg(name[0: -4])
+      if fix == "infix":
+        first, oper, second = images[0], images[1], images[2]
+      elif fix == "prefix":
+        oper, first, second = images[0], images[1], images[2]
+      else:
+        first, second, oper = images[0], images[1], images[2]
+      firstT = torch.unsqueeze(ToTensor()(first), 1)
+      secondT = torch.unsqueeze(ToTensor()(second), 1)
+      operT = torch.unsqueeze(ToTensor()(oper), 1)
+      predictFirst = runSingle(model, firstT, device)
+      predictSecond = runSingle(model, secondT, device)
+      predictOper = runSingle(model, operT, device)
+      if predictOper != o:
+        continue
+      if predictFirst == n1 and predictFirst != n2:
+        _value_nums[n1] += 1
+        cv2.imwrite(_indi_dir + "/" + _value_name_map[n1] + "_data/" + str(_value_nums[n1]) + ".jpg", first)
+        _value_nums[n2] += 1
+        cv2.imwrite(_indi_dir + "/" + _value_name_map[n2] + "_data/" + str(_value_nums[n2]) + ".jpg", second)
+        _value_nums[o] += 1
+        cv2.imwrite(_indi_dir + "/" + _value_name_map[o] + "_data/" + str(_value_nums[o]) + ".jpg", oper)
+      elif predictFirst == n2 and predictFirst != n1:
+        _value_nums[n1] += 1
+        cv2.imwrite(_indi_dir + "/" + _value_name_map[n1] + "_data/" + str(_value_nums[n1]) + ".jpg", second)
+        _value_nums[n2] += 1
+        cv2.imwrite(_indi_dir + "/" + _value_name_map[n2] + "_data/" + str(_value_nums[n2]) + ".jpg", first)
+        _value_nums[o] += 1
+        cv2.imwrite(_indi_dir + "/" + _value_name_map[o] + "_data/" + str(_value_nums[o]) + ".jpg", oper)
+
+
+def runSingle(model, tensor, device):
+  model.eval()
+  with torch.no_grad():
+    tensor.to(device)
+    output = model(tensor)
+    prediction = output.argmax(dim=1, keepdim=True)
+    return prediction[0]
+
 def processAnnotations():
 
   global _value_name_map, _annotate_df, _value_nums, _indi_dir, _annotation_path, _annotate_dict
@@ -284,7 +351,10 @@ def main():
   random.seed(_seed)
   model = NeuralNetwork().to(device)
   optimizer = optim.Adadelta(model.parameters(), lr=_learning_rate)
-  scheduler = StepLR(optimizer, step_size=1, gamma=_gamma)
+  # scheduler = StepLR(optimizer, step_size=1, gamma=_gamma)
   train(model, device, optimizer, 8, [0, 5, 7, 8, 9, 10, 11, 12], _first_iters)
+  processAnnotations2(model, device)
+
+!rm -r /content/individualDatasets
 
 main()
