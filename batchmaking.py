@@ -9,6 +9,10 @@ import numpy as np
 import sys
 import pandas as pd
 import os
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
 
 
 drive.mount("/content/drive")
@@ -18,12 +22,39 @@ zip_path = "/content/drive/MyDrive/soml/NEWSolML-50.zip"
 data_path = "/content/SoML-50/data/"
 annotation_path = "/content/SoML-50/annotations.csv"
 annotate_df = None
+annotate_dict = {}
 
 with ZipFile(zip_path, 'r') as zip:
   zip.extractall()
 
 value_name_map = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "add", "sub", "multi", "div"]
 value_nums = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+class NeuralNetwork(nn.Module):
+
+  def __init__(self):
+    super(NeuralNetwork, self).__init__()
+    self.convolution1 = nn.Conv2d(1, 32, 3, 1)
+    self.convolution2 = nn.Conv2d(32, 64, 3, 1)
+    self.linear1 = nn.Linear(9216, 128)
+    self.linear2 = nn.Linear(128, 14)
+    self.removeRandom1 = nn.Dropout(0.25)
+    self.removeRandom2 = nn.Dropout(0.5)
+  
+  def forward(self, x):
+    x = self.convolution1(x)
+    x = F.relu(x)
+    x = self.convolution2(x)
+    x = F.relu(x)
+    x = F.max_pool2d(x, 2)
+    x = self.removeRandom1(x)
+    x = torch.flatten(x, 1)
+    x = self.linear1(x)
+    x = F.relu(x)
+    x = self.removeRandom2(x)
+    x = self.linear2(x)
+    output = F.log_softmax(x, dim=1)
+    return output
 
 # takes an image and tells us the right, left, upper and lower boundries
 def getBounds(img):
@@ -64,7 +95,7 @@ def makeSquare (image, x, y):
   
   return asarray(im_invert)
 
-# takes an image and makes it into a tensor of (3, 1, 32, 32)
+# takes an image and makes it into an array of three images of size 28x28
 def cropAndProcessImage(img):
   bounds = getBounds(img)
   images = []
@@ -88,8 +119,7 @@ def getImage(img_dir, name):
   img = cv2.imread(image_path, 0) # takes input in grayscale
   return img
 
-# gets processed images from data_path
-# if it has already been processed then it gets from proc_img_dir
+# gets processed images from proc_img_dir
 def getProcessedImg(name):
   global proc_img_dir
   data = []
@@ -118,15 +148,14 @@ def initialProcessing():
   os.system("mkdir " + proc_img_dir)
   for i in range(14):
     os.system("mkdir " + indi_dir + "/" + value_name_map[i] + "_data")
-  
-
-  processAllImgs()
-  
-def processAnootations():
-
-  global value_name_map, annotate_df, value_nums, indi_dir, annotation_path
 
   annotate_df = pd.read_csv(annotation_path)
+  
+  processAllImgs()
+  
+def processAnnotations():
+
+  global value_name_map, annotate_df, value_nums, indi_dir, annotation_path, annotate_dict
 
   for idx in annotate_df.index:
     result = annotate_df['Value'][idx]
@@ -156,17 +185,17 @@ def processAnootations():
     if do_proc:
       images = getProcessedImg(name[0: -4])
       if fix == "infix":
-        oper = images[1]
-        first = images[0]
-        second = images[2]
+        first, oper, second = images[0], images[1], images[2]
+        if do_nums:
+          annotate_dict[name] = [f, o, s]
       elif fix == "prefix":
-        oper = images[0]
-        first = images[1]
-        second = images[2]
+        oper, first, second = images[0], images[1], images[2]
+        if do_nums:
+          annotate_dict[name] = [o, f, s]
       else:
-        oper = images[2]
-        first = images[0]
-        second = images[1]
+        first, second, oper = images[0], images[1], images[2]
+        if do_nums:
+          annotate_dict[name] = [f, s, o]
       if do_nums:
         value_nums[f] += 1
         cv2.imwrite(indi_dir + "/" + value_name_map[f] + "_data/" + str(value_nums[f]) + ".jpg", first)
@@ -175,10 +204,10 @@ def processAnootations():
       value_nums[o] += 1
       cv2.imwrite(indi_dir + "/" + value_name_map[o] + "_data/" + str(value_nums[o]) + ".jpg", oper)
 
-
 def main():
 
   initialProcessing()
-  processAnootations()
+  processAnnotations()
 
 main()
+
