@@ -7,18 +7,23 @@ import math
 from PIL import Image, ImageOps
 import numpy as np
 import sys
-import csv 
+import pandas as pd
 import os
 
 
 drive.mount("/content/drive")
+indi_dir = "individualDatasets"
+proc_img_dir = "processedImages"
 zip_path = "/content/drive/MyDrive/soml/NEWSolML-50.zip"
 data_path = "/content/SoML-50/data/"
 annotation_path = "/content/SoML-50/annotations.csv"
+annotate_df = None
 
 with ZipFile(zip_path, 'r') as zip:
   zip.extractall()
 
+value_name_map = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "add", "sub", "multi", "div"]
+value_nums = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 
 # takes an image and tells us the right, left, upper and lower boundries
 def getBounds(img):
@@ -56,12 +61,13 @@ def makeSquare (image, x, y):
   box = (int((sqsize - x) / 2), int((sqsize - y) / 2))
   new_image.paste(img, box)
   im_invert = ImageOps.invert(new_image)
+  
   return asarray(im_invert)
 
 # takes an image and makes it into a tensor of (3, 1, 32, 32)
 def cropAndProcessImage(img):
   bounds = getBounds(img)
-  tensors = []
+  images = []
   for i in range(3):
     xs = i * 128
     b = bounds[i]
@@ -72,56 +78,83 @@ def cropAndProcessImage(img):
     cropped = img[u : d, xs + l: xs + r]
     squared = makeSquare(cropped, r - l + 1, d - u + 1)
     final = cv2.resize(squared, (28, 28))
-    tensors.append((final))
+    images.append(final)
 
-  return tensors
+  return images
 
-# gets the image of the name num.jpg
-def getImage(img_dir, num):
-  image_path = img_dir + num
+# gets the image 'name' in img_dir
+def getImage(img_dir, name):
+  image_path = img_dir + name
   img = cv2.imread(image_path, 0) # takes input in grayscale
   return img
 
-!mkdir zero_data
-!mkdir multi_data
-!mkdir add_data
-!mkdir sub_data
-!mkdir nine_data
-!mkdir five_data
-!mkdir seven_data
-!mkdir eight_data
+# gets processed images from data_path
+# if it has already been processed then it gets from proc_img_dir
+def getProcessedImg(name):
+  global proc_img_dir
+  data = []
+  for i in range(1, 4):
+    data.append(cv2.imread(proc_img_dir + "/" + name + "_" + str(i)+ ".jpg"))
 
+  return data
 
+def processAllImgs():
+
+  global proc_img_dir, data_path, annotate_df
+
+  for idx in annotate_df.index:
+    name = annotate_df['Image'][idx]
+    data = cropAndProcessImage(getImage(data_path, name))
+    name = name[0: -4]
+    for i in range(3):
+      cv2.imwrite(proc_img_dir + "/" + name + "_"  + str(i+1) + ".jpg", data[i])
+
+def initialProcessing():
+
+  global value_name_map, indi_dir, proc_img_dir, annotate_df
+
+  # first make all the directories
+  os.system("mkdir " + indi_dir)
+  os.system("mkdir " + proc_img_dir)
+  for i in range(14):
+    os.system("mkdir " + indi_dir + "/" + value_name_map[i] + "_data")
+  
+
+  processAllImgs()
+  
 def processAnootations():
 
-  multiply_dir = "/content/multi_data/"
-  addition_dir = "/content/add_data/"
-  subtract_dir = "/content/sub_data/"
-  zeros_dir = "/content/zero_data/"
-  nines_dir = "/content/nine_data/"
-  fives_dir = "/content/five_data/"
-  sevens_dir = "/content/seven_data/"
-  eights_dir = "/content/eight_data/"
+  global value_name_map, annotate_df, value_nums, indi_dir, annotation_path
 
-  zero_num = 0
-  multi_num = 0
-  add_num = 0
-  sub_num = 0
-  nine_num = 0
-  five_num = 0
-  seven_num = 0
-  eight_num = 0
+  annotate_df = pd.read_csv(annotation_path)
 
-  with open(annotation_path, 'r') as csvfile:
-    csvreader = csv.reader(csvfile)
-    for row in csvreader:
-      result = row[2]
-      fix = row[1]
-      name = row[0]
-      if name == "Image":
-        continue
-      print(name, fix, result)
-      images = cropAndProcessImage(getImage(data_path, name))
+  for idx in annotate_df.index:
+    result = annotate_df['Value'][idx]
+    fix = annotate_df['Label'][idx]
+    name = annotate_df['Image'][idx]
+    do_proc = True
+    do_nums = True
+    f, s, o = -1, -1, -1
+    if result == 81: # 9 x 9 case
+      f, s, o = 9, 9, 12
+    elif result == 64: # 8 x 8 case
+      f, s, o = 8, 8, 12
+    elif result == 49: # 7 x 7 case
+      f, s, o = 7, 7, 12
+    elif result == 25: # 5 x 5 case
+      f, s, o = 5, 5, 12
+    elif result == -9: # 0 - 9 case
+      f, s, o = 0, 9, 11
+    elif result < 0: # opertor is -
+      o = 11
+      do_nums = False
+    elif result == 13 or result == 17: # opertor is +
+      o = 10
+      do_nums = False
+    else:
+      do_proc = False
+    if do_proc:
+      images = getProcessedImg(name[0: -4])
       if fix == "infix":
         oper = images[1]
         first = images[0]
@@ -134,52 +167,18 @@ def processAnootations():
         oper = images[2]
         first = images[0]
         second = images[1]
-      if result == "81": # 9 x 9 case
-        nine_num += 1
-        cv2.imwrite(os.path.join(nines_dir , str(nine_num) + ".jpg"), first)
-        nine_num += 1
-        cv2.imwrite(os.path.join(nines_dir , str(nine_num) + ".jpg"), second)
-        multi_num += 1
-        cv2.imwrite(os.path.join(multiply_dir, str(multi_num) + ".jpg"), oper)
-      elif result == "64": # 8 x 8 case
-        eight_num += 1
-        cv2.imwrite(os.path.join(eights_dir , str(eight_num) + ".jpg"), first)
-        eight_num += 1
-        cv2.imwrite(os.path.join(eights_dir , str(eight_num) + ".jpg"), second)
-        multi_num += 1
-        cv2.imwrite(os.path.join(multiply_dir, str(multi_num) + ".jpg"), oper)
-      elif result == "49": # 7 x 7 case
-        seven_num += 1
-        cv2.imwrite(os.path.join(sevens_dir , str(seven_num) + ".jpg"), first)
-        seven_num += 1
-        cv2.imwrite(os.path.join(sevens_dir , str(seven_num) + ".jpg"), second)
-        multi_num += 1
-        cv2.imwrite(os.path.join(multiply_dir, str(multi_num) + ".jpg"), oper)
-      elif result == "25": # 5 x 5 case
-        five_num += 1
-        cv2.imwrite(os.path.join(fives_dir , str(five_num) + ".jpg"), first)
-        five_num += 1
-        cv2.imwrite(os.path.join(fives_dir , str(five_num) + ".jpg"), second)
-        multi_num += 1
-        cv2.imwrite(os.path.join(multiply_dir, str(multi_num) + ".jpg"), oper)
-      elif result == "-9":
-        zero_num += 1
-        cv2.imwrite(os.path.join(zeros_dir , str(zero_num) + ".jpg"), first)
-        nine_num += 1
-        cv2.imwrite(os.path.join(nines_dir , str(nine_num) + ".jpg"), second)
-        sub_num += 1
-        cv2.imwrite(os.path.join(subtract_dir, str(sub_num) + ".jpg"), oper)
-      elif int(result) < 0:
-        sub_num += 1
-        cv2.imwrite(os.path.join(subtract_dir, str(sub_num) + ".jpg"), oper)
-      elif result == "13" or result == "17":
-        add_num += 1
-        cv2.imwrite(os.path.join(addition_dir, str(add_num) + ".jpg"), oper)
+      if do_nums:
+        value_nums[f] += 1
+        cv2.imwrite(indi_dir + "/" + value_name_map[f] + "_data/" + str(value_nums[f]) + ".jpg", first)
+        value_nums[s] += 1
+        cv2.imwrite(indi_dir + "/" + value_name_map[s] + "_data/" + str(value_nums[s]) + ".jpg", second)
+      value_nums[o] += 1
+      cv2.imwrite(indi_dir + "/" + value_name_map[o] + "_data/" + str(value_nums[o]) + ".jpg", oper)
 
 
 def main():
+
+  initialProcessing()
   processAnootations()
 
 main()
-
-!zip -r data.zip zero_data add_data eight_data five_data multi_data nine_data seven_data sub_data
