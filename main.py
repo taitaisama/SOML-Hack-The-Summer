@@ -1,3 +1,4 @@
+
 from google.colab import drive
 from zipfile import ZipFile
 from numpy import asarray
@@ -82,7 +83,7 @@ def train(model, device, optimizer, number, possibleValues, map_to, iters):
     data, labels = data.to(device), labels.to(device)
     optimizer.zero_grad()
     output = model(data)
-    loss = F.nll_loss(output, labels)
+    loss = F.nll_loss(output, l.item()abels)
     loss.backward()
     optimizer.step()
     if idx % int(iters/25) == 0:
@@ -212,7 +213,7 @@ def saveAnnotations():
   firsts = []
   seconds = []
   thirds = []
-  for name in PyDict_Keys(_annotate_dict):
+  for name in _annotate_dict.keys():
     names.append(name)
     firsts.append(_annotate_dict[name][0])
     seconds.append(_annotate_dict[name][1])
@@ -282,11 +283,11 @@ def makeAnnotations(model1, model2, model3, modelOper, device):
       if result == getResult(predict1_1, predictOper, predict2_1):
         count += 1
         if fix == "infix":
-          _annotate_dict[name] = [predict1_1, predictOper, predict2_1]
+          _annotate_dict[name] = [predict1_1.item(), predictOper.item(), predict2_1.item()]
         elif fix == "prefix":
-          _annotate_dict[name] = [predictOper, predict1_1, predict2_1]
+          _annotate_dict[name] = [predictOper.item(), predict1_1.item(), predict2_1.item()]
         else:
-          _annotate_dict[name] = [predict1_1, predict2_1, predictOper]
+          _annotate_dict[name] = [predict1_1.item(), predict2_1.item(), predictOper.item()]
   print("\ndone")
   print("annotations done : ", count, "/", len(_annotate_df.index))
 
@@ -554,8 +555,8 @@ def main():
   processOnesAndTwos(model2, model1, device)
   modelOper = model1
   model1 = NeuralNetwork().to(device)
-  model2 = NeuralNetwork(144, 40).to(device)
-  model3 = NeuralNetwork(100, 20).to(device)
+  model2 = NeuralNetwork().to(device)
+  model3 = NeuralNetwork().to(device)
   optimizer1 = optim.Adadelta(model1.parameters(), lr=_learning_rate)
   optimizer2 = optim.Adadelta(model2.parameters(), lr=_learning_rate)
   optimizer3 = optim.Adadelta(model3.parameters(), lr=_learning_rate)
