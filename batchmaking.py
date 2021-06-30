@@ -215,7 +215,7 @@ def initialProcessing():
 
   _annotate_df = pd.read_csv(_annotation_path)
   
-  # processAllImgs()
+  processAllImgs()
   
 def processAnnotations2(model, device):
 
@@ -284,7 +284,7 @@ def processAnnotations2(model, device):
       print("=", end="")
   print("\ndone")
 
-def divisionProcess(modelOper, modelDigit, device, digit):
+def divisionProcess(modelOper, modelDigit, device):
 
   global _value_name_map, _annotate_df, _value_nums, _indi_dir, _annotation_path, _annotate_dict
   
@@ -296,7 +296,7 @@ def divisionProcess(modelOper, modelDigit, device, digit):
     fix = _annotate_df['Label'][idx]
     name = _annotate_df['Image'][idx]
     do_proc = True
-    if result == 1: # possible division case for digit/digit
+    if result == 1: # possible division case for num/num
       images = getProcessedImg(name[0: -4])
       if fix == "infix":
         first, oper, second = images[0], images[1], images[2]
@@ -312,11 +312,11 @@ def divisionProcess(modelOper, modelDigit, device, digit):
       predictOper = runSingle(modelOper, operTensor, device)
       if predictOper != 13:
         continue
-      if predictFirst != predictSecond or predictFirst != digit:
+      if predictFirst != predictSecond:
         continue
       else:
         _value_nums[13] += 1
-        cv2.imwrite(_indi_dir + "/" + _value_name_map[13] + "_data/" + str(_value_nums[13]) + ".jpg", first)
+        cv2.imwrite(_indi_dir + "/" + _value_name_map[13] + "_data/" + str(_value_nums[13]) + ".jpg", oper)
     if idx % int(len(_annotate_df.index) / 25) == 0:
       print("=", end="")
   print("\ndone")
@@ -401,43 +401,27 @@ def main():
   np.random.seed(_seed)
   random.seed(_seed)
   model1 = NeuralNetwork().to(device)
-  optimizer = optim.Adadelta(model1.parameters(), lr=_learning_rate)
+  optimizer1 = optim.Adadelta(model1.parameters(), lr=_learning_rate)
   torch.save(model1.state_dict(), _reset_model)
-  # scheduler = StepLR(optimizer, step_size=1, gamma=_gamma)
   print("start|    training first ai    |end")
   print("      ", end="")
-  train(model1, device, optimizer, 8, [0, 5, 7, 8, 9, 10, 11, 12], [0, 5, 7, 8, 9, 10, 11, 12], _first_iters)
+  train(model1, device, optimizer1, 8, [0, 5, 7, 8, 9, 10, 11, 12], [0, 5, 7, 8, 9, 10, 11, 12], _first_iters)
   processAnnotations2(model1, device)
   resetModel(model1)
-  print("start|   training division ai  |end")
+  print("start|  trainning operator ai  |end")
   print("      ", end="")
   # model1 learns to identify only +,-,x rest are made to 13
-  # train(model1, device, optimizer, 8, [0, 5, 7, 8, 9, 10, 11, 12], [13, 13, 13, 13, 13, 10, 11, 12], (_first_iters*2))
+  train(model1, device, optimizer1, 11, [0, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], [13, 13, 13, 13, 13, 13, 13, 13, 10, 11, 12], (_first_iters*2))
   model2 = NeuralNetwork().to(device)
-  list1 = [5, 5, 5, 5, 5, 7, 8, 9]
-  list2 = [5, 5, 5, 5, 5, 13, 13, 13]
-  train(model1, device, optimizer, 8, list1, list2, 500)
-  # for i in range(5, 10):
-  #   # model2 learns to identify only 'i', rest of the numbers are made to 13
-  #   list1 = [0]
-  #   list2 = [13]
-  #   for j in range(3, 10):
-  #     if j != i:
-  #       list1.append(j)
-  #       list2.append(13)
-  #     else:
-  #       for k in range(4):
-  #         list1.append(j)
-  #         list2.append(i)
-  #   print(list1)
-  #   print(list2)
-  #   print("start|      training "+ str(i) + " ai      |end")
-  #   print("      ", end="")
-    # train(model2, device, optimizer, 11, list1, list2, _first_iters)
-    # divisionProcess(model1, model2, device, i)
-    # resetModel(model2)
+  print("start|   trainning digit ai    |end")
+  print("      ", end="")
+  resetModel(model2)  
+  optimizer2 = optim.Adadelta(model2.parameters(), lr=_learning_rate)
+  train(model2, device, optimizer2, 5, [5, 6, 7, 8, 9], [5, 6, 7, 8, 9], (_first_iters*2))
+  divisionProcess(model1, model2, device)
+  resetModel(model2)
 
 
-# !rm -r /content/individualDatasets
+!rm -r /content/individualDatasets
 
 main()
