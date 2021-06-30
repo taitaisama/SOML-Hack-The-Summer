@@ -1,75 +1,48 @@
 from google.colab import drive
-from __future__ import print_function
 from zipfile import ZipFile
-from numpy.random import shuffle
 from numpy import asarray
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import torch.optim as optim
-from torchvision import datasets, transforms
-from torch.optim.lr_scheduler import StepLR
 import matplotlib.pyplot as plt
-from PIL import Image
-from torchvision.transforms import ToTensor
 import cv2
 import math
 from PIL import Image, ImageOps
 import numpy as np
 import sys
-from torch.utils.data import Dataset, DataLoader
-from skimage import io, transform
-from torchvision import transforms, utils
-from torchvision.io import read_image
-import csv 
+import pandas as pd
+import os
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
+from torchvision.transforms import ToTensor
+import random
+from torch.optim.lr_scheduler import StepLR
 
-# basic parameters
-batch_size = 20
-test_size = 300 
-learning_rate = 1.0
-gamma = 0.7
-seed = 1
-epochs = 15
-print_interval = 10
 
-drive.mount("/content/gdrive")
+drive.mount("/content/drive")
+_indi_dir = "individualDatasets"
+_proc_img_dir = "processedImages"
+_reset_model = "randomModel.pt"
+_zip_path = "/content/drive/MyDrive/soml/NEWSolML-50.zip"
+_data_path = "/content/SoML-50/data/"
+_annotation_path = "/content/SoML-50/annotations.csv"
+_annotate_df = None
+_annotate_dict = {}
 
-zip_path = '/content/gdrive/MyDrive/Database.zip'
-annotations_path = '/content/SoML-50/annotations.csv'
-train_data_path = '/content/TrainData/'
-test_data_path = '/content/TestData/'
-# copy_path = '/content/gdrive/MyDrive/soml/created_dataset/batch1data/'
-csvfile_path = 'temporary.csv'
+#  parameters
+_batch_size = 20*3
+_test_size = 300*3
+_learning_rate = 1.0
+_gamma = 0.7
+_seed = 1
+_epochs = 15
+_print_interval = 10
+_first_iters = 500
 
-with ZipFile(zip_path, 'r') as zip:
+with ZipFile(_zip_path, 'r') as zip:
   zip.extractall()
 
-# this holds corrusopnding lables for a given input
-# the input is given in order so the lables can be extrapolated from the number of the image
-# there are 996 different images, so we want image_num % 996
-# label_map[0] is first num, [1] is second, [2] is operator
-# info about fix can just be found by image_num % 3
-label_map = [[0]*996, [0]*996, [0]*996] 
-
-class DataSet(Dataset):
-
-  def __init__(self, img_dir, start, end, transform=None):
-    self.img_dir = img_dir
-    self.transform = transform
-    self.start = start
-    self.end = end
-
-  def __len__(self):
-    return (self.end-self.start)
-
-  def __getitem__(self, idx):
-    image = getImage(self.img_dir, idx + self.start)
-    label = idx + self.start
-    image = cropAndProcessImage(image)
-    label = translateLables(label)
-
-    return image, label
-
+_value_name_map = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "add", "sub", "multi", "div"]
+_value_nums = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 
 class NeuralNetwork(nn.Module):
 
@@ -77,10 +50,10 @@ class NeuralNetwork(nn.Module):
     super(NeuralNetwork, self).__init__()
     self.convolution1 = nn.Conv2d(1, 32, 3, 1)
     self.convolution2 = nn.Conv2d(32, 64, 3, 1)
-    self.removeRandom1 = nn.Dropout(0.25)
-    self.removeRandom2 = nn.Dropout(0.5)
     self.linear1 = nn.Linear(9216, 128)
     self.linear2 = nn.Linear(128, 14)
+    self.removeRandom1 = nn.Dropout(0.25)
+    self.removeRandom2 = nn.Dropout(0.5)
   
   def forward(self, x):
     x = self.convolution1(x)
@@ -97,78 +70,51 @@ class NeuralNetwork(nn.Module):
     output = F.log_softmax(x, dim=1)
     return output
 
-def train(optimizer, model, loader, device):
+def train(model, device, optimizer, number, possibleValues, map_to, iters):
+
+  global _batch_size
   model.train()
-  for batch_idx, (data, label) in enumerate(loader):
+  loss = None
+  for idx in range(iters):
+    data, labels = getIndivBatch(number, possibleValues, map_to)
+    data = torch.cat(data, 0)
+    data, labels = data.to(device), labels.to(device)
     optimizer.zero_grad()
-    concated_data = torch.cat(data, dim=0)
-    concat_labels = torch.cat(label, dim=0)
-    concat_labels = concat_labels.to(device)
-    concated_data = concated_data.to(device)
-    output = model(concated_data)
-    loss = F.nll_loss(output, concat_labels)
+    output = model(data)
+    loss = F.nll_loss(output, labels)
     loss.backward()
     optimizer.step()
-    if batch_idx % print_interval == 0:
-            print('LOGS [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                 batch_idx * len(data) * 3, len(loader.dataset),
-                100. * batch_idx / len(loader), loss.item()))
+    if idx % int(iters/25) == 0:
+      print("=", end="")
+  print("\nFinal loss = ", loss.item())
+  print("done")
 
+# returns a _batch_size number of images from the _indi_dir
+# it can be limited to only get some specific values
+def getIndivBatch(number, possibleValues, map_to):
 
-def test(model, device, loader):
-  model.eval()
-  totalLoss = 0
-  correct = 0
-  with torch.no_grad():
-    for data, label in loader:
-      concated_data = torch.cat(data, dim=0)
-      concat_labels = torch.cat(label, dim=0)
-      concat_labels = concat_labels.to(device)
-      concated_data = concated_data.to(device)
-      output = model(concated_data)
-      totalLoss += F.nll_loss(output, concat_labels, reduction='sum').item()
-      pred = output.argmax(dim=1, keepdim=True)
-      correct += pred.eq(concat_labels.view_as(pred)).sum().item()
+  global _batch_size, _value_nums, _indi_dir, _value_name_map
 
-  AverageLoss = totalLoss/(test_size*3)
+  images = []
+  labels = []
+  for i in range(_batch_size):
 
-  # print('\nAverage loss: {:.4f}, Accuracy: {}/{} ({:.3f}%)\n'.format(
-  #     test_loss, correct, len(test_loader.dataset),
-  #     100. * correct / (len(test_loader.dataset)*3)))
-  print('\nAverage Loss = ', AverageLoss, " Accuracy = ", correct, " out of ", len(loader.dataset)*3, " = ", correct / (len(loader.dataset)*3))
+    rand = random.randint(0, number - 1)
+    digit_to_send = map_to[rand]
+    rand = possibleValues[rand]
+    labels.append(digit_to_send)
+    rand2 = random.randint(1, _value_nums[rand])
+    rand = _value_name_map[rand]
+    path = _indi_dir + "/" + rand + "_data/" 
+    img = getImage(path, str(rand2) + ".jpg")
+    images.append(torch.unsqueeze(ToTensor()(img), 0))
+  
+  return images, torch.tensor(labels)
 
-
-# fills the lable map array
-def makeLabels():
-  p = 0
-  for i in range(10):
-    for j in range(10):
-      flag = 0
-      if j == 0 :
-        flag = 1
-      elif i == 0:
-        flag = 0
-      elif j > i:
-        flag = 1
-      elif i % j != 0 :
-        flag = 1
-      else:
-        flag = 0
-      if flag == 1 :
-        for k in range(9):
-          label_map[0][p+k] = i
-          label_map[1][p+k] = j
-          label_map[2][p+k] = math.floor(k/3)
-        p += 9
-      else:
-        for k in range(12):
-          label_map[0][p+k] = i
-          label_map[1][p+k] = j
-          label_map[2][p+k] = math.floor(k/3)
-        p += 12
 
 # takes an image and tells us the right, left, upper and lower boundries
 def getBounds(img):
+
   # reduce in size for easier searching
   reduce = cv2.resize(img, (48, 16))
   imgarr = [reduce[0:16, 0:16], reduce[0:16, 16:32], reduce[0:16, 32:48]]
@@ -192,23 +138,26 @@ def getBounds(img):
     bounds[k][3] = min(15, bounds[k][3] + 1)
     bounds[k][1] = max(0, bounds[k][1] - 1)
     bounds[k][2] = max(0, bounds[k][2] - 1)
+
   return bounds
 
 # takes an image of size x*y and makes it a square of size x*x if x > y
 def makeSquare (image, x, y):
-  sqsize = max(x, y)
 
+  sqsize = max(x, y)
   img = Image.fromarray(image)
   new_image = Image.new('L', (sqsize, sqsize), (255))
   box = (int((sqsize - x) / 2), int((sqsize - y) / 2))
   new_image.paste(img, box)
   im_invert = ImageOps.invert(new_image)
+  
   return asarray(im_invert)
 
-# takes an image and makes it into a tensor of (3, 1, 32, 32)
+# takes an image and makes it into an array of three images of size 28x28
 def cropAndProcessImage(img):
+
   bounds = getBounds(img)
-  tensors = []
+  images = []
   for i in range(3):
     xs = i * 128
     b = bounds[i]
@@ -219,63 +168,317 @@ def cropAndProcessImage(img):
     cropped = img[u : d, xs + l: xs + r]
     squared = makeSquare(cropped, r - l + 1, d - u + 1)
     final = cv2.resize(squared, (28, 28))
-    tensors.append(ToTensor()(final))
+    images.append(final)
 
-  return tensors
+  return images
 
-# gets the image of the name num.jpg
-def getImage(img_dir, num):
-  image_path = img_dir + str(num) + ".jpg"
+# gets the image 'name' in img_dir
+def getImage(img_dir, name):
+
+  image_path = img_dir + name
   img = cv2.imread(image_path, 0) # takes input in grayscale
   return img
-  
-# # gets the image of the name num.jpg
-# def getTestImage(num):
-#   num = num + 40000
-#   image_path = test_data_path + str(num) + ".jpg"
-#   img = cv2.imread(image_path, 0) # takes input in grayscale
-#   return img
 
-def translateLables(num):
-  num = num - 1
-  num = num % 996
+# gets processed images from _proc_img_dir
+def getProcessedImg(name):
+
+  global _proc_img_dir
   data = []
-  if num % 3 == 0: # prefix
-    data.append(label_map[2][num] + 10)
-    data.append(label_map[0][num])
-    data.append(label_map[1][num])
-  elif num % 3 == 1: # postfix
-    data.append(label_map[0][num])
-    data.append(label_map[1][num])
-    data.append(label_map[2][num] + 10)
-  else : # infix
-    data.append(label_map[0][num])
-    data.append(label_map[2][num] + 10)
-    data.append(label_map[1][num])
+  for i in range(1, 4):
+    data.append(cv2.imread(_proc_img_dir + "/" + name + "_" + str(i)+ ".jpg"))
+
   return data
-    
+
+def processAllImgs():
+
+  global _proc_img_dir, _data_path, _annotate_df
+  print("start|    processing images    |end")
+  print("      ", end="")
+  for idx in _annotate_df.index:
+    name = _annotate_df['Image'][idx]
+    data = cropAndProcessImage(getImage(_data_path, name))
+    name = name[0: -4]
+    for i in range(3):
+      cv2.imwrite(_proc_img_dir + "/" + name + "_"  + str(i+1) + ".jpg", data[i])
+    if idx % int(len(_annotate_df.index) / 25) == 0:
+      print("=", end="")
+  print("\ndone")
+
+def initialProcessing():
+
+  global _value_name_map, _indi_dir, _proc_img_dir, _annotate_df
+
+  # # first make all the directories
+  os.system("mkdir " + _indi_dir)
+  os.system("mkdir " + _proc_img_dir)
+  for i in range(14):
+    os.system("mkdir " + _indi_dir + "/" + _value_name_map[i] + "_data")
+
+  _annotate_df = pd.read_csv(_annotation_path)
+  
+  processAllImgs()
+
+def processOnesAndTwos(modelNum, modelOper, device):
+  global _value_name_map, _annotate_df, _value_nums, _indi_dir, _annotation_path, _annotate_dict
+  
+  print("start|   making ones and twos  |end")
+  print("      ", end="")
+  for idx in _annotate_df.index:
+    first, oper, second = None, None, None
+    result = _annotate_df['Value'][idx]
+    fix = _annotate_df['Label'][idx]
+    name = _annotate_df['Image'][idx]
+    if result == 18: # possible case for 2 * 9
+      images = getProcessedImg(name[0: -4])
+      if fix == "infix":
+        first, oper, second = images[0], images[1], images[2]
+      elif fix == "prefix":
+        oper, first, second = images[0], images[1], images[2]
+      else:
+        first, second, oper = images[0], images[1], images[2]
+      firstTensor = torch.unsqueeze(ToTensor()(first), 1)
+      secondTensor = torch.unsqueeze(ToTensor()(second), 1)
+      operTensor = torch.unsqueeze(ToTensor()(oper), 1)
+      predictFirst = runSingle(modelNum, firstTensor, device)
+      predictSecond = runSingle(modelNum, secondTensor, device)
+      predictOper = runSingle(modelOper, operTensor, device)
+      if predictOper == 12:
+        if predictFirst == 9 and predictSecond != 9:
+          _value_nums[2] += 1
+          cv2.imwrite(_indi_dir + "/" + _value_name_map[2] + "_data/" + str(_value_nums[2]) + ".jpg", second)
+        elif predictFirst != 9 and predictSecond == 9:
+          _value_nums[2] += 1
+          cv2.imwrite(_indi_dir + "/" + _value_name_map[2] + "_data/" + str(_value_nums[2]) + ".jpg", first)
+
+    elif result == 5 or result == 7: # we want 1 x 5 or 1 x 7
+      images = getProcessedImg(name[0: -4])
+      if fix == "infix":
+        first, oper, second = images[0], images[1], images[2]
+      elif fix == "prefix":
+        oper, first, second = images[0], images[1], images[2]
+      else:
+        first, second, oper = images[0], images[1], images[2]
+      firstTensor = torch.unsqueeze(ToTensor()(first), 1)
+      secondTensor = torch.unsqueeze(ToTensor()(second), 1)
+      operTensor = torch.unsqueeze(ToTensor()(oper), 1)
+      predictFirst = runSingle(modelNum, firstTensor, device)
+      predictSecond = runSingle(modelNum, secondTensor, device)
+      predictOper = runSingle(modelOper, operTensor, device)
+      if predictOper == 12:
+        if predictFirst == result and predictSecond != result:
+          _value_nums[1] += 1
+          cv2.imwrite(_indi_dir + "/" + _value_name_map[1] + "_data/" + str(_value_nums[1]) + ".jpg", second)
+        elif predictFirst != result and predictSecond == result:
+          _value_nums[1] += 1
+          cv2.imwrite(_indi_dir + "/" + _value_name_map[1] + "_data/" + str(_value_nums[1]) + ".jpg", first)
+    if idx % int(len(_annotate_df.index) / 25) == 0:
+      print("=", end="")
+  print("\ndone")
+   
+def processAnnotations2(model, device):
+
+  global _value_name_map, _annotate_df, _value_nums, _indi_dir, _annotation_path, _annotate_dict
+  
+  print("start|   making second batch   |end")
+  print("      ", end="")
+  for idx in _annotate_df.index:
+    first, oper, second = None, None, None
+    result = _annotate_df['Value'][idx]
+    fix = _annotate_df['Label'][idx]
+    name = _annotate_df['Image'][idx]
+    do_proc = True
+    store_n1 = True
+    n1, n2, o = -1, -1, -1 # n1 is known number, n2 is other
+    if result == 27: # 3 x 9 case
+      n1, n2, o = 9, 3, 12
+      store_n1 = False
+    elif result == 28: # 4 x 7 case
+      n1, n2, o = 7, 4, 12
+    elif result == 42: # 6 x 7 case
+      n1, n2, o = 7, 6, 12
+    elif result == 20: # 4 x 5 case
+      n1, n2, o = 5, 4, 12
+    elif result == 32: # 4 x 8 case
+      n1, n2, o = 8, 4, 12
+      store_n1 = False
+    elif result == 21: # 3 x 7 case
+      n1, n2, o = 7, 3, 12
+      store_n1 = False
+    else: 
+      do_proc = False
+    if do_proc:
+      images = getProcessedImg(name[0: -4])
+      if fix == "infix":
+        first, oper, second = images[0], images[1], images[2]
+      elif fix == "prefix":
+        oper, first, second = images[0], images[1], images[2]
+      else:
+        first, second, oper = images[0], images[1], images[2]
+      firstTensor = torch.unsqueeze(ToTensor()(first), 1)
+      secondTensor = torch.unsqueeze(ToTensor()(second), 1)
+      operTensor = torch.unsqueeze(ToTensor()(oper), 1)
+      predictFirst = runSingle(model, firstTensor, device)
+      predictSecond = runSingle(model, secondTensor, device)
+      predictOper = runSingle(model, operTensor, device)
+      if predictOper != o:
+        continue
+      if predictFirst == n1 and predictFirst != n2:
+        if store_n1:
+          _value_nums[n1] += 1
+          cv2.imwrite(_indi_dir + "/" + _value_name_map[n1] + "_data/" + str(_value_nums[n1]) + ".jpg", first)
+        _value_nums[n2] += 1
+        cv2.imwrite(_indi_dir + "/" + _value_name_map[n2] + "_data/" + str(_value_nums[n2]) + ".jpg", second)
+        _value_nums[o] += 1
+        cv2.imwrite(_indi_dir + "/" + _value_name_map[o] + "_data/" + str(_value_nums[o]) + ".jpg", oper)
+      elif predictFirst == n2 and predictFirst != n1:
+        if store_n1:
+          _value_nums[n1] += 1
+          cv2.imwrite(_indi_dir + "/" + _value_name_map[n1] + "_data/" + str(_value_nums[n1]) + ".jpg", second)
+        _value_nums[n2] += 1
+        cv2.imwrite(_indi_dir + "/" + _value_name_map[n2] + "_data/" + str(_value_nums[n2]) + ".jpg", first)
+        _value_nums[o] += 1
+        cv2.imwrite(_indi_dir + "/" + _value_name_map[o] + "_data/" + str(_value_nums[o]) + ".jpg", oper)
+    if idx % int(len(_annotate_df.index) / 25) == 0:
+      print("=", end="")
+  print("\ndone")
+
+def divisionProcess(modelOper, modelNum, device):
+
+  global _value_name_map, _annotate_df, _value_nums, _indi_dir, _annotation_path, _annotate_dict
+  
+  print("start|  making division batch  |end")
+  print("      ", end="")
+  for idx in _annotate_df.index:
+    first, oper, second = None, None, None
+    result = _annotate_df['Value'][idx]
+    fix = _annotate_df['Label'][idx]
+    name = _annotate_df['Image'][idx]
+    if result == 1: # possible division case for num/num
+      images = getProcessedImg(name[0: -4])
+      if fix == "infix":
+        first, oper, second = images[0], images[1], images[2]
+      elif fix == "prefix":
+        oper, first, second = images[0], images[1], images[2]
+      else:
+        first, second, oper = images[0], images[1], images[2]
+      firstTensor = torch.unsqueeze(ToTensor()(first), 1)
+      secondTensor = torch.unsqueeze(ToTensor()(second), 1)
+      operTensor = torch.unsqueeze(ToTensor()(oper), 1)
+      predictFirst = runSingle(modelNum, firstTensor, device)
+      predictSecond = runSingle(modelNum, secondTensor, device)
+      predictOper = runSingle(modelOper, operTensor, device)
+      if predictOper == 13 and predictFirst == predictSecond:
+        _value_nums[13] += 1
+        cv2.imwrite(_indi_dir + "/" + _value_name_map[13] + "_data/" + str(_value_nums[13]) + ".jpg", oper)
+    if idx % int(len(_annotate_df.index) / 25) == 0:
+      print("=", end="")
+  print("\ndone")
+
+
+def runSingle(model, tensor, device):
+  model.eval()
+  with torch.no_grad():
+    tensor.to(device)
+    output = model(tensor)
+    prediction = output.argmax(dim=1, keepdim=True)
+    return prediction[0]
+
+def processAnnotations():
+
+  global _value_name_map, _annotate_df, _value_nums, _indi_dir, _annotation_path, _annotate_dict
+
+  print("start|   making first batch    |end")
+  print("      ", end="")
+  for idx in _annotate_df.index:
+    result = _annotate_df['Value'][idx]
+    fix = _annotate_df['Label'][idx]
+    name = _annotate_df['Image'][idx]
+    do_proc = True
+    do_nums = True
+    f, s, o = -1, -1, -1
+    if result == 81: # 9 x 9 case
+      f, s, o = 9, 9, 12
+    elif result == 64: # 8 x 8 case
+      f, s, o = 8, 8, 12
+    elif result == 49: # 7 x 7 case
+      f, s, o = 7, 7, 12
+    elif result == 25: # 5 x 5 case
+      f, s, o = 5, 5, 12
+    elif result == -9: # 0 - 9 case
+      f, s, o = 0, 9, 11
+    elif result < 0: # opertor is -
+      o = 11
+      do_nums = False
+    elif result == 13 or result == 17: # opertor is +
+      o = 10
+      do_nums = False
+    else:
+      do_proc = False
+    if do_proc:
+      images = getProcessedImg(name[0: -4])
+      if fix == "infix":
+        first, oper, second = images[0], images[1], images[2]
+        if do_nums:
+          _annotate_dict[name] = [f, o, s]
+      elif fix == "prefix":
+        oper, first, second = images[0], images[1], images[2]
+        if do_nums:
+          _annotate_dict[name] = [o, f, s]
+      else:
+        first, second, oper = images[0], images[1], images[2]
+        if do_nums:
+          _annotate_dict[name] = [f, s, o]
+      if do_nums:
+        _value_nums[f] += 1
+        cv2.imwrite(_indi_dir + "/" + _value_name_map[f] + "_data/" + str(_value_nums[f]) + ".jpg", first)
+        _value_nums[s] += 1
+        cv2.imwrite(_indi_dir + "/" + _value_name_map[s] + "_data/" + str(_value_nums[s]) + ".jpg", second)
+      _value_nums[o] += 1
+      cv2.imwrite(_indi_dir + "/" + _value_name_map[o] + "_data/" + str(_value_nums[o]) + ".jpg", oper)
+    if idx % int(len(_annotate_df.index) / 25) == 0:
+      print("=", end="")
+  print("\ndone")
+
+def resetModel(model):
+  global _reset_model
+  model.load_state_dict(torch.load(_reset_model))
+  model.eval()
 
 def main():
-  device = torch.device("cuda")
-  torch.manual_seed(seed)
-  np.random.seed(seed)
-  makeLabels()
-  trainingDataset = DataSet(train_data_path, 1, 45000)
-  testingDataset = DataSet(test_data_path, 45001, 50000)
-  transform=transforms.Compose([
-        transforms.Normalize((0.1307,), (0.3081,))
-        ])
-  trainLoader = DataLoader(trainingDataset, batch_size=batch_size, shuffle=True, num_workers=1, pin_memory=True)
-  testLoader = DataLoader(testingDataset, batch_size=test_size, shuffle=True, num_workers=1, pin_memory=True)
-  model = NeuralNetwork().to(device)
-  optimizer = optim.Adadelta(model.parameters(), lr=learning_rate)
-  scheduler = StepLR(optimizer, step_size=1, gamma=gamma)
-  for epoch in range(epochs):
-    train(optimizer, model, trainLoader, device)
-    test(model, device, testLoader)
-    scheduler.step()
-    saveModel = "model" + str(epoch+1) + ".pt"
-    print("Epoch = ", epoch+1)
-    torch.save(model.state_dict(), saveModel)
+
+  global _seed, _learning_rate, _gamma, _first_iters, _reset_model
+  initialProcessing()
+  processAnnotations()
+  device = torch.device("cuda"  if torch.cuda.is_available() else "cpu")
+  torch.manual_seed(_seed)
+  np.random.seed(_seed)
+  random.seed(_seed)
+  model1 = NeuralNetwork().to(device)
+  optimizer1 = optim.Adadelta(model1.parameters(), lr=_learning_rate)
+  torch.save(model1.state_dict(), _reset_model)
+  print("start|    training first ai    |end")
+  print("      ", end="")
+  train(model1, device, optimizer1, 8, [0, 5, 7, 8, 9, 10, 11, 12], [0, 5, 7, 8, 9, 10, 11, 12], _first_iters)
+  processAnnotations2(model1, device)
+  resetModel(model1)
+  print("start|  trainning operator ai  |end")
+  print("      ", end="")
+  # model1 learns to identify only +,-,x rest are made to 13
+  train(model1, device, optimizer1, 11, [0, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], [13, 13, 13, 13, 13, 13, 13, 13, 10, 11, 12], (_first_iters*2))
+  model2 = NeuralNetwork().to(device)
+  print("start|   trainning digit ai    |end")
+  print("      ", end="")
+  resetModel(model2)  
+  optimizer2 = optim.Adadelta(model2.parameters(), lr=_learning_rate)
+  train(model2, device, optimizer2, 5, [5, 6, 7, 8, 9], [5, 6, 7, 8, 9], (_first_iters*2))
+  divisionProcess(model1, model2, device)
+  resetModel(model1)
+  print("start| trainning operator ai no2|end")
+  print("      ", end="")
+  train(model1, device, optimizer1, 4, [10, 11, 12, 13], [10, 11, 12, 13], (_first_iters*2))
+  # model1 now is trained pretty well in operators 
+  processOnesAndTwos(model2, model1, device)
+
+# !rm -r /content/individualDatasets
 
 main()
