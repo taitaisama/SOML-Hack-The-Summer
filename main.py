@@ -305,7 +305,7 @@ def initialProcessing():
 
   _annotate_df = pd.read_csv(_annotation_path)
   
-  # processAllImgs()
+  processAllImgs()
 
 def getResult(n1, o, n2):
 
