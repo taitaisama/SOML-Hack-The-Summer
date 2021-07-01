@@ -74,25 +74,25 @@ class NeuralNetwork(nn.Module):
     output = F.log_softmax(x, dim=1)
     return output
 
-def train_all(model, device, optimizer):
+# def train_all(model, device, optimizer):
   
-  global _batch_size, _annotate_arr, _annotate_dict
-  model.train()
-  _annotate_arr = list(_annotate_dict.keys())
-  random.shuffle(_annotate_arr)
-  for idx in range(int(3 * len(_annotate_arr)/_batch_size)):
-    pos = int(idx * _batch_size / 3)
-    data, labels = getRandImages(pos)
-    data = torch.cat(data, 0)
-    data, labels = data.to(device), labels.to(device)
-    optimizer.zero_grad()
-    output = model(data)
-    loss = F.nll_loss(output, labels)
-    loss.backward()
-    optimizer.step()
-    if idx % int((3 * len(_annotate_arr)/_batch_size)/25) == 0:
-      print("=", end="")
-  print("\nFinal loss = ", loss.item(), "\n")
+#   global _batch_size, _annotate_arr, _annotate_dict
+#   model.train()
+#   _annotate_arr = list(_annotate_dict.keys())
+#   random.shuffle(_annotate_arr)
+#   for idx in range(int(3 * len(_annotate_arr)/_batch_size)):
+#     pos = int(idx * _batch_size / 3)
+#     data, labels = getRandImages(pos)
+#     data = torch.cat(data, 0)
+#     data, labels = data.to(device), labels.to(device)
+#     optimizer.zero_grad()
+#     output = model(data)
+#     loss = F.nll_loss(output, labels)
+#     loss.backward()
+#     optimizer.step()
+#     if idx % int((3 * len(_annotate_arr)/_batch_size)/25) == 0:
+#       print("=", end="")
+#   print("\nFinal loss = ", loss.item(), "\n")
 
 def train(model, device, optimizer, number, possibleValues, map_to, iters):
 
@@ -305,7 +305,7 @@ def initialProcessing():
 
   _annotate_df = pd.read_csv(_annotation_path)
   
-  processAllImgs()
+  # processAllImgs()
 
 def getResult(n1, o, n2):
 
@@ -444,9 +444,9 @@ def makeAnnotations(model1, model2, model3, modelOper, device):
       oper, first, second = images[0], images[1], images[2]
     else:
       first, second, oper = images[0], images[1], images[2]
-    firstTensor = torch.unsqueeze(ToTensor()(first), 1)
-    secondTensor = torch.unsqueeze(ToTensor()(second), 1)
-    operTensor = torch.unsqueeze(ToTensor()(oper), 1)
+    firstTensor = torch.unsqueeze(ToTensor()(first), 1).to(device)
+    secondTensor = torch.unsqueeze(ToTensor()(second), 1).to(device)
+    operTensor = torch.unsqueeze(ToTensor()(oper), 1).to(device)
     predict1_1 = runSingle(model1, firstTensor, device)
     predict1_2 = runSingle(model2, firstTensor, device)
     predict1_3 = runSingle(model3, firstTensor, device)
@@ -485,9 +485,9 @@ def processOnesAndTwos(modelNum, modelOper, device):
         oper, first, second = images[0], images[1], images[2]
       else:
         first, second, oper = images[0], images[1], images[2]
-      firstTensor = torch.unsqueeze(ToTensor()(first), 1)
-      secondTensor = torch.unsqueeze(ToTensor()(second), 1)
-      operTensor = torch.unsqueeze(ToTensor()(oper), 1)
+      firstTensor = torch.unsqueeze(ToTensor()(first), 1).to(device)
+      secondTensor = torch.unsqueeze(ToTensor()(second), 1).to(device)
+      operTensor = torch.unsqueeze(ToTensor()(oper), 1).to(device)
       predictFirst = runSingle(modelNum, firstTensor, device)
       predictSecond = runSingle(modelNum, secondTensor, device)
       predictOper = runSingle(modelOper, operTensor, device)
@@ -507,9 +507,9 @@ def processOnesAndTwos(modelNum, modelOper, device):
         oper, first, second = images[0], images[1], images[2]
       else:
         first, second, oper = images[0], images[1], images[2]
-      firstTensor = torch.unsqueeze(ToTensor()(first), 1)
-      secondTensor = torch.unsqueeze(ToTensor()(second), 1)
-      operTensor = torch.unsqueeze(ToTensor()(oper), 1)
+      firstTensor = torch.unsqueeze(ToTensor()(first), 1).to(device)
+      secondTensor = torch.unsqueeze(ToTensor()(second), 1).to(device)
+      operTensor = torch.unsqueeze(ToTensor()(oper), 1).to(device)
       predictFirst = runSingle(modelNum, firstTensor, device)
       predictSecond = runSingle(modelNum, secondTensor, device)
       predictOper = runSingle(modelOper, operTensor, device)
@@ -563,9 +563,9 @@ def processAnnotations2(model, device):
         oper, first, second = images[0], images[1], images[2]
       else:
         first, second, oper = images[0], images[1], images[2]
-      firstTensor = torch.unsqueeze(ToTensor()(first), 1)
-      secondTensor = torch.unsqueeze(ToTensor()(second), 1)
-      operTensor = torch.unsqueeze(ToTensor()(oper), 1)
+      firstTensor = torch.unsqueeze(ToTensor()(first), 1).to(device)
+      secondTensor = torch.unsqueeze(ToTensor()(second), 1).to(device)
+      operTensor = torch.unsqueeze(ToTensor()(oper), 1).to(device)
       predictFirst = runSingle(model, firstTensor, device)
       predictSecond = runSingle(model, secondTensor, device)
       predictOper = runSingle(model, operTensor, device)
@@ -610,9 +610,9 @@ def processDivision(modelOper, modelNum, device):
         oper, first, second = images[0], images[1], images[2]
       else:
         first, second, oper = images[0], images[1], images[2]
-      firstTensor = torch.unsqueeze(ToTensor()(first), 1)
-      secondTensor = torch.unsqueeze(ToTensor()(second), 1)
-      operTensor = torch.unsqueeze(ToTensor()(oper), 1)
+      firstTensor = torch.unsqueeze(ToTensor()(first), 1).to(device)
+      secondTensor = torch.unsqueeze(ToTensor()(second), 1).to(device)
+      operTensor = torch.unsqueeze(ToTensor()(oper), 1).to(device)
       predictFirst = runSingle(modelNum, firstTensor, device)
       predictSecond = runSingle(modelNum, secondTensor, device)
       predictOper = runSingle(modelOper, operTensor, device)
@@ -627,6 +627,7 @@ def processDivision(modelOper, modelNum, device):
 def runSingle(model, tensor, device):
 
   model.eval()
+  model = model.to(device)
   with torch.no_grad():
     tensor.to(device)
     output = model(tensor)
@@ -689,12 +690,6 @@ def processAnnotations():
       print("=", end="")
   print("\n")
 
-def resetModel(model):
-
-  global _reset_model
-  model.load_state_dict(torch.load(_reset_model))
-  model.eval()
-
 def loadStuff():
 
   global _annotate_dict, _annotate_df
@@ -731,24 +726,24 @@ def main():
   random.seed(_seed)
   model1 = NeuralNetwork().to(device)
   optimizer1 = optim.Adadelta(model1.parameters(), lr=_learning_rate)
-  torch.save(model1.state_dict(), _reset_model)
   print("start|    training first ai    |end")
   print("      ", end="")
   train(model1, device, optimizer1, 8, [0, 5, 7, 8, 9, 10, 11, 12], [0, 5, 7, 8, 9, 10, 11, 12], _first_iters)
   processAnnotations2(model1, device)
-  resetModel(model1)
+  model1 = NeuralNetwork().to(device)
+  optimizer1 = optim.Adadelta(model1.parameters(), lr=_learning_rate)
   print("start|  trainning operator ai  |end")
   print("      ", end="")
   # model1 learns to identify only +,-,x rest are made to 13
   train(model1, device, optimizer1, 11, [0, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], [13, 13, 13, 13, 13, 13, 13, 13, 10, 11, 12], (_first_iters*2))
   model2 = NeuralNetwork().to(device)
+  optimizer2 = optim.Adadelta(model2.parameters(), lr=_learning_rate)
   print("start|   trainning digit ai    |end")
   print("      ", end="")
-  resetModel(model2)  
-  optimizer2 = optim.Adadelta(model2.parameters(), lr=_learning_rate)
   train(model2, device, optimizer2, 5, [5, 6, 7, 8, 9], [5, 6, 7, 8, 9], (_first_iters*2))
   processDivision(model1, model2, device)
-  resetModel(model1)
+  model1 = NeuralNetwork().to(device)
+  optimizer1 = optim.Adadelta(model1.parameters(), lr=_learning_rate)
   print("start| trainning operator ai no2|end")
   print("      ", end="")
   train(model1, device, optimizer1, 4, [10, 11, 12, 13], [10, 11, 12, 13], (_first_iters*3))
@@ -770,21 +765,17 @@ def main():
   print("start|  trainning digit ai no3  |end")
   print("      ", end="")
   train(model3, device, optimizer3, 10, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9], [0, 1, 2, 3, 4, 5, 6, 7, 8, 9], (_first_iters*2))
-  torch.save(model1, 'testmodel1.pt')
-  torch.save(model2, 'testmodel2.pt')
-  torch.save(model3, 'testmodel3.pt')
-  torch.save(modelOper, 'testmodelOper.pt')
   makeAnnotations(model1, model2, model3, modelOper, device)
   model1 = NeuralNetwork().to(device)
   optimizer1 = optim.Adadelta(model1.parameters(), lr=_learning_rate)
-  scheduler = StepLR(optimizer1, step_size=1, gamma=gamma)
+  scheduler = StepLR(optimizer1, step_size=1, gamma=_gamma)
   resetIndivDir()
   print("start |   trainning final ai    |end")
   for epoch in range(_epochs):
-    print("epoch ", epoch+1, end="")
+    print("epoch", epoch+1, end="")
     train(model1, device, optimizer1, 14, [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 , 12, 13], [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 , 12, 13], (_first_iters*5))
     scheduler.step()
-  saveModel = "model.pt"
+  saveModel = "trained_model.pt"
   torch.save(model1.state_dict(), saveModel)
   print("Your Model Has been completely trained!")
 
