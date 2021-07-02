@@ -13,6 +13,11 @@ At first sight it looks nearly impossible to train an AI just by the results of 
 
 Recognizing symbols is hard for a machine, but what makes it even harder is unnecessary variations in data that only confuse the AI. Namely the position and size of the individual symbols. These attributes don't contribute anything to the recognition of the numbers and only cause inefficiencies, so our first step should be to eliminate them. I have implemented a simple function, cropAndProcessImage that takes an image, divides it into three parts, crops each part individually such that the digit is in the center and is scaled properly and then resizes them to 28 by 28 pixels (yes the size is inspired by the MNIST dataset). The reduction in size makes it so that the AI can easily process the data and counterintuitively, it doesn't even cause a huge loss in the overall "quality" of the image. This is because the given images are completely black and white with no grays, so converting them into images with a 0-255 pixel color variation with lower size doesn't lead to much difference. You can think of it as the edges being marked by gray colors. An example of the image preprocessing is given below.
 
+ ![solar system](https://github.com/taitaisama/SOML-Hack-The-Summer/blob/main/images/1.jpg?raw=true)
+ ![solar system](https://github.com/taitaisama/SOML-Hack-The-Summer/blob/main/images/1_1.jpg?raw=true)
+ ![solar system](https://github.com/taitaisama/SOML-Hack-The-Summer/blob/main/images/1_2.jpg?raw=true)
+ ![solar system](https://github.com/taitaisama/SOML-Hack-The-Summer/blob/main/images/1_3.jpg?raw=true)
+
 ### Convolution using conv2d
 
 Convolutions are used to highlight features of an input image that might not be obvious to humans but AIs can easily extract information out of them. The implementation in pytorch has in_channels, out_channels and kernel_size as input, it takes in_channels number of input tensors and outputs out_channels number of output tensors using kernels with random weights and biases. The convolutions are random but can be reproduced by using torch.manual_seed(seed) which makes it so that the same convolutions are generated every time. I have used two convolutions, one from 1 to 32, other from 32 to 64 and then a max_pool2d() which takes the largest of 4 bits of adjacent data, reducing the size by 4 times.
