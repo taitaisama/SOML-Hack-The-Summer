@@ -22,10 +22,9 @@ from torch.optim.lr_scheduler import StepLR
 drive.mount("/content/drive")
 _indi_dir = "individualDatasets"
 _proc_img_dir = "processedImages"
-_reset_model = "randomModel.pt"
 _zip_path = "/content/drive/MyDrive/soml/NEWSolML-50.zip"
-_data_path = "/content/SoML-50/data/"
-_annotation_path = "/content/SoML-50/annotations.csv"
+_data_path = ""
+_annotation_path = ""
 _annotate_df = None
 _annotate_dict = {}
 _made_csv = 'newAnotate.csv'
@@ -716,8 +715,10 @@ def loadStuff():
 
 def main():
 
-  global _seed, _learning_rate, _gamma, _first_iters, _reset_model, _epochs
-
+  global _seed, _learning_rate, _gamma, _first_iters, _epochs, _data_path, _annotation_path
+  
+  _data_path = sys.argv[1] + "/"
+  _annotation_path = sys.argv[2]
   initialProcessing()
   processAnnotations()
   device = torch.device("cuda"  if torch.cuda.is_available() else "cpu")
