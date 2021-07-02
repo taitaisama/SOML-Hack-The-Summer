@@ -16,6 +16,7 @@ Recognizing symbols is hard for a machine, but what makes it even harder is unne
  <img src="https://github.com/taitaisama/SOML-Hack-The-Summer/blob/main/images/1.jpg" alt="drawing" width="600"/>
  
  gets converted to
+ 
   <img src="https://github.com/taitaisama/SOML-Hack-The-Summer/blob/main/images/1_1.jpg" alt="drawing" width="200"/> 
   <img src="https://github.com/taitaisama/SOML-Hack-The-Summer/blob/main/images/1_2.jpg" alt="drawing" width="200"/> 
   <img src="https://github.com/taitaisama/SOML-Hack-The-Summer/blob/main/images/1_3.jpg" alt="drawing" width="200"/>
