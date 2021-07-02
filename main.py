@@ -1,8 +1,5 @@
 
-from google.colab import drive
-from zipfile import ZipFile
 from numpy import asarray
-import matplotlib.pyplot as plt
 import cv2
 import math
 from PIL import Image, ImageOps
@@ -22,7 +19,6 @@ from torch.optim.lr_scheduler import StepLR
 drive.mount("/content/drive")
 _indi_dir = "individualDatasets"
 _proc_img_dir = "processedImages"
-_zip_path = "/content/drive/MyDrive/soml/NEWSolML-50.zip"
 _data_path = ""
 _annotation_path = ""
 _annotate_df = None
@@ -41,8 +37,6 @@ _epochs = 5
 _print_interval = 10
 _first_iters = 500
 
-with ZipFile(_zip_path, 'r') as zip:
-  zip.extractall()
 
 _value_name_map = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "add", "sub", "multi", "div"]
 _value_nums = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
