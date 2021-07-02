@@ -1,0 +1,3 @@
+The work submitted is completely mine own
+
+I would like to thank StackOverflow and pytorch documentation, without them this project wouldnt have been possible
