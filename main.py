@@ -16,7 +16,6 @@ import random
 from torch.optim.lr_scheduler import StepLR
 
 
-drive.mount("/content/drive")
 _indi_dir = "individualDatasets"
 _proc_img_dir = "processedImages"
 _data_path = ""
